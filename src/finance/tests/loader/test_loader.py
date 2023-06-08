@@ -7,13 +7,11 @@ import shutil
 
 class TestLoader(unittest.TestCase):
     @staticmethod
-    def create_temp_parquet(path: str) -> None:
+    def create_temp_parquet(path: str, ncols: int, nrows: int, nfiles: int) -> None:
         path = path + "/" if not path.endswith("/") else path
         os.makedirs(path, exist_ok=True)
         init_seed = np.random.SeedSequence(0)
-        seeds = init_seed.spawn(100)
-        ncols = 10
-        nrows = 100
+        seeds = init_seed.spawn(nfiles)
         columns = [f"col{i}" for i in range(ncols)]
         for pos, seed in enumerate(seeds):
             gen = np.random.default_rng(seed)
@@ -23,10 +21,18 @@ class TestLoader(unittest.TestCase):
 
     def setUp(self) -> None:
         temp_dir = "./test/"
-        self.create_temp_parquet(temp_dir)
-        self.attr = {"path": f"{temp_dir}*.parquet", "engine": Engine.PANDAS}
-        self.model = Loader(*self.attr)
+        self.ncols = 10
+        self.nrows = 100
+        self.nfiles = 100
+        self.create_temp_parquet(temp_dir, self.ncols, self.nrows, self.nfiles)
+        self.attr_pd = {"path": f"{temp_dir}", "engine": Engine.PANDAS}
+        self.attr_pl = {"path": f"{temp_dir}/*.parquet", "engine": Engine.POLARS}
+        self.loader_pd = Loader(**self.attr_pd)
+        self.loader_pl = Loader(**self.attr_pl)
+        self.data_pd = self.loader_pd.load()
+        self.data_pl = self.loader_pl.load()
         shutil.rmtree(temp_dir)
 
     def test_loader(self) -> None:
-        pass
+        self.assertEqual(self.data_pd.shape, (self.nrows * self.nfiles, self.ncols))
+        self.assertEqual(self.data_pl.width, self.ncols)
