@@ -2,9 +2,10 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.linalg import norm
 import pandas as pd
-from typing import Tuple, List
-from scipy.linalg import svd  # , inv, sqrtm
+from typing import Tuple, Optional
+from scipy.linalg import svd, inv, sqrtm
 from numba import njit
+from tqdm import tqdm
 
 
 @dataclass
@@ -12,6 +13,10 @@ class Model:
     lag: int
     n_factors: int
     eps: float = 1e-6
+
+    @property
+    def name(self):
+        return f"{self.__class__.__name__} model"
 
     # The following methods are taken and adapted from QRT Challenges
     def random_stiefel(self) -> np.ndarray:
@@ -23,7 +28,7 @@ class Model:
     def check_orthonormality(self, stiefel: np.ndarray) -> bool:
         n_factors = stiefel.shape[1]
         error = pd.DataFrame(stiefel.T @ stiefel - np.eye(n_factors)).abs()
-        return any(error.unstack() > self.eps)
+        return not any(error.unstack() > self.eps)
 
     def metric_train(
         self,
@@ -38,10 +43,10 @@ class Model:
         Y_pred: pd.DataFrame = X_train @ stiefel @ beta
         Y_pred = Y_pred.unstack().T
 
-        Ytrue = Y_train.div(np.sqrt((Y_train**2).sum()), 1).reset_index(drop=True)
-        Ypred = Y_pred.div(np.sqrt((Y_pred**2).sum()), 1).reset_index(drop=True)
+        Y_true = Y_train.div(np.sqrt((Y_train**2).sum()), 1).reset_index(drop=True)
+        Y_pred = Y_pred.div(np.sqrt((Y_pred**2).sum()), 1).reset_index(drop=True)
 
-        mean_overlap = (Ytrue * Ypred).sum().mean()
+        mean_overlap = (Y_true * Y_pred).sum().mean()
 
         return mean_overlap
 
@@ -50,6 +55,9 @@ class Model:
 class BenchMark(Model):
     n_iter: int = 1000
     random_state: int = 1234
+
+    def __post_init__(self):
+        self.max_metric = -1.0
 
     @staticmethod
     def fit_beta(
@@ -60,26 +68,25 @@ class BenchMark(Model):
         beta: pd.DataFrame = (
             np.linalg.inv(predictors.T @ predictors) @ predictors.T @ targets
         )
-
         return beta.to_numpy()
 
     def train(
         self, X_train: pd.DataFrame, Y_train: pd.DataFrame
     ) -> Tuple[np.ndarray, np.ndarray]:
         np.random.seed(self.random_state)
-        max_metric = -1
         stiefel_star = np.empty((self.lag, self.n_factors))
         beta_star = np.empty((self.n_factors,))
-        for iteration in range(self.n_iter):
+        iterator = range(self.n_iter)
+        for iteration in tqdm(iterator, total=self.n_iter, desc=self.name):
             # Generate a uniform random Stiefel matrix and fit beta
             # with minimal mean square prediction error on the training data set
             stiefel = self.random_stiefel()
             beta = self.fit_beta(stiefel, X_train, Y_train)
             # Compute the metric on the training set and keep the best result
             m = self.metric_train(stiefel, beta, X_train, Y_train)
-            if m > max_metric:
-                print(iteration, "metric_train:", m)
-                max_metric = m
+            if m > self.max_metric:
+                tqdm.write(f"Iteration {iteration} with best train metric: {m}")
+                self.max_metric = m
                 stiefel_star = stiefel
                 beta_star = beta
         return stiefel_star, beta_star
@@ -89,8 +96,15 @@ class BenchMark(Model):
 class ProjGrad(Model):
     step_stiefel: float = 0.1
     step_beta: float = 0.05
-    random_state: int = 12345
+    random_state: int = 1234
     n_iter: int = 1000
+    use_benchmark: bool = False
+
+    def __post_init__(self):
+        if self.use_benchmark:
+            self.__benchmark = BenchMark(
+                n_iter=self.n_iter, random_state=self.random_state
+            )
 
     @staticmethod
     def project(stiefel: np.ndarray) -> np.ndarray:
@@ -154,11 +168,18 @@ class ProjGrad(Model):
 
     def train(
         self,
-        stiefel0: np.ndarray,
-        beta0: np.ndarray,
+        stiefel0: Optional[np.ndarray],
+        beta0: Optional[np.ndarray],
         X_train: pd.DataFrame,
         Y_train: pd.DataFrame,
     ) -> Tuple[np.ndarray, np.ndarray]:
+        if self.use_benchmark:
+            stiefel0, beta0 = self.__benchmark.train(X_train, Y_train)
+        elif stiefel0 is None or beta0 is None:
+            raise ValueError(
+                "Initial values should be provided for stiefel0 and beta0."
+            )
+
         stiefel = stiefel0.copy()
         beta = beta0.copy()
         stiefel_star = stiefel.copy()
@@ -174,11 +195,8 @@ class ProjGrad(Model):
         n_dates = len(dates)
         assets = indices.get_level_values(1).unique()
         n_assets = len(assets)
-        # max_date = int(max(dates))
-        # for date in range(self.lag, max_date):
-        for index in range(n_dates):
+        for index in tqdm(range(n_dates), total=n_dates, desc=self.name):
             date = index + self.lag
-            # print(date)
             return_date = Y_train.loc[:, date].to_numpy()
             # print(f"return_date shape: {return_date.shape}")
             # lagged_returns = X_train.loc[self.get_index(date, assets), :].to_numpy()
@@ -218,14 +236,15 @@ class ProjGrad(Model):
             # beta = fitBeta(A).reshape(-1,1)
             # beta = fitBeta(A)
             stiefel_temp = stiefel + self.step_stiefel * grad_stiefel
-            stiefel = self.project(stiefel_temp)
-            # stiefel = stiefel_temp @ inv(sqrtm(stiefel_temp.T @ stiefel_temp))
+            # stiefel = self.project(stiefel_temp)
+            stiefel = stiefel_temp @ inv(sqrtm(stiefel_temp.T @ stiefel_temp))
             # print(f"beta shape: {beta.shape}")
 
             m = self.metric_train(stiefel, beta, X_train, Y_train)
 
+            # tqdm.write(f"metric {m}")
             if m > max_metric:
-                print(f"date:{date}", "metric_train:", m)
+                tqdm.write(f"Date: {date} with best train metric: {m}")
                 max_metric = m
                 stiefel_star = stiefel
                 beta_star = beta
