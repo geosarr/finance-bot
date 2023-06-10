@@ -1,15 +1,16 @@
 from dataclasses import dataclass
 import numpy as np
+from numpy.linalg import norm
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, List
 from scipy.linalg import svd  # , inv, sqrtm
 from numba import njit
 
 
 @dataclass
 class Model:
-    lag: int = 250
-    n_factors: int = 10
+    lag: int
+    n_factors: int
     eps: float = 1e-6
 
     # The following methods are taken and adapted from QRT Challenges
@@ -37,8 +38,8 @@ class Model:
         Y_pred: pd.DataFrame = X_train @ stiefel @ beta
         Y_pred = Y_pred.unstack().T
 
-        Ytrue = Y_train.div(np.sqrt((Y_train**2).sum()), 1)
-        Ypred = Y_pred.div(np.sqrt((Y_pred**2).sum()), 1)
+        Ytrue = Y_train.div(np.sqrt((Y_train**2).sum()), 1).reset_index(drop=True)
+        Ypred = Y_pred.div(np.sqrt((Y_pred**2).sum()), 1).reset_index(drop=True)
 
         mean_overlap = (Ytrue * Ypred).sum().mean()
 
@@ -67,9 +68,8 @@ class BenchMark(Model):
     ) -> Tuple[np.ndarray, np.ndarray]:
         np.random.seed(self.random_state)
         max_metric = -1
-        stiefel_star, beta_star = np.empty((self.lag, self.n_factors)), np.empty(
-            (self.n_factors,)
-        )
+        stiefel_star = np.empty((self.lag, self.n_factors))
+        beta_star = np.empty((self.n_factors,))
         for iteration in range(self.n_iter):
             # Generate a uniform random Stiefel matrix and fit beta
             # with minimal mean square prediction error on the training data set
@@ -87,39 +87,44 @@ class BenchMark(Model):
 
 @dataclass
 class ProjGrad(Model):
+    step_stiefel: float = 0.1
+    step_beta: float = 0.05
+    random_state: int = 12345
     n_iter: int = 1000
-    step_stiefel: float
-    step_beta: float
-    random_state: int
 
     @staticmethod
     def project(stiefel: np.ndarray) -> np.ndarray:
         u, _, v = svd(stiefel, full_matrices=False)
         return u @ v
 
-    @njit
     @staticmethod
+    # @njit
     def grad_stiefel(
         returns: np.ndarray,
         beta: np.ndarray,
-        factor: int,
+        factors: np.ndarray,
         stiefel: np.ndarray,
         prediction: np.ndarray,
         lagged_returns: np.ndarray,
         identity_lag: np.ndarray,
     ):
-        return (
-            returns
-            @ (
-                beta[factor] * identity_lag
-                - beta[factor]
-                * stiefel
-                @ beta.reshape(-1, 1)
-                @ prediction.reshape(1, -1)
-                @ lagged_returns
-                / np.sqrt(np.linalg.norm(prediction, 2)) ** 3
+        return list(
+            map(
+                lambda factor: (
+                    returns
+                    @ (
+                        beta[factor] * identity_lag
+                        - beta[factor]
+                        * stiefel
+                        @ beta.reshape(-1, 1)
+                        @ prediction.reshape(1, -1)
+                        @ lagged_returns
+                        / np.sqrt(np.linalg.norm(prediction, 2)) ** 3
+                    )
+                ).reshape(-1, 1),
+                factors,
             )
-        ).reshape(-1, 1)
+        )
 
     @staticmethod
     def grad_beta(
@@ -143,6 +148,10 @@ class ProjGrad(Model):
             )
         ).reshape(-1, 1)
 
+    @staticmethod
+    def get_indices_from(index: int, n_assets: int):
+        return list(range(index, index + n_assets))
+
     def train(
         self,
         stiefel0: np.ndarray,
@@ -150,32 +159,40 @@ class ProjGrad(Model):
         X_train: pd.DataFrame,
         Y_train: pd.DataFrame,
     ) -> Tuple[np.ndarray, np.ndarray]:
-        if len(beta0.shape) == 1:
-            beta = beta0.reshape(-1, 1)
-        max_metric = self.metric_train(stiefel0, beta)
-        stiefel_star = stiefel0
-        beta_star = beta
+        stiefel = stiefel0.copy()
+        beta = beta0.copy()
+        stiefel_star = stiefel.copy()
+        beta_star = beta.copy()
+        if len(beta.shape) == 1:
+            beta = beta.reshape(-1, 1)
+        max_metric = self.metric_train(stiefel, beta, X_train, Y_train)
         identity_lag = np.eye(self.lag, self.lag)
         identity_factors = np.eye(self.n_factors, self.n_factors)
-        factors = range(self.n_factors)
-        for date in range(250, 754):
-            print(date)
-            return_date = X_train.loc[:, str(date)].to_numpy()
+        factors = np.arange(0, self.n_factors)
+        indices = X_train.index
+        dates = indices.get_level_values(0).unique()
+        n_dates = len(dates)
+        assets = indices.get_level_values(1).unique()
+        n_assets = len(assets)
+        # max_date = int(max(dates))
+        # for date in range(self.lag, max_date):
+        for index in range(n_dates):
+            date = index + self.lag
+            # print(date)
+            return_date = Y_train.loc[:, date].to_numpy()
             # print(f"return_date shape: {return_date.shape}")
-            lagged_returns = X_train.loc[
-                [(str(date), i) for i in range(50)], :
+            # lagged_returns = X_train.loc[self.get_index(date, assets), :].to_numpy()
+            lagged_returns = X_train.iloc[
+                self.get_indices_from(index, n_assets), :
             ].to_numpy()
             # print(f"lagged_returns shape: {lagged_returns.shape}")
             prediction = lagged_returns @ stiefel @ beta.reshape(-1, 1)
             # print(f"prediction shape: {prediction.shape}")
             # print(f"prediction.T shape: {prediction.T.shape}")
-            returns = (
-                return_date.T @ lagged_returns / np.sqrt(np.linalg.norm(return_date, 2))
-            )
+            returns = return_date.T @ lagged_returns / np.sqrt(norm(return_date, 2))
             # print(f"returns shape: {returns.shape}")
 
             # gradients
-
             grad_stiefel = np.hstack(
                 self.grad_stiefel(
                     returns,
