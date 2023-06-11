@@ -13,6 +13,7 @@ dependencies:
   - wheel=0.38.4=py310h06a4308_0
   - pip:
     - black==23.3.0
+    - ipykernel==6.15.0
     - numba==0.57.0 
     - numpy==1.24.3
     - pandas==2.0.2
