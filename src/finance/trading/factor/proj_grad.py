@@ -4,7 +4,7 @@ from numpy.linalg import norm
 import pandas as pd
 from typing import Tuple, Optional
 from scipy.linalg import svd, inv, sqrtm
-from numba import njit
+from numba import guvectorize, float64, int64
 from tqdm.auto import tqdm
 from finance.trading.factor.__model import Model
 from finance.trading.factor.benchmark import Benchmark
@@ -79,17 +79,28 @@ class ProjGrad(Model):
             # print(f"\n{date} returns: \n{returns}")
 
             # gradients
-            grad_stiefel = np.hstack(
-                self.grad_stiefel(
-                    returns,
-                    beta,
-                    factors,
-                    stiefel,
-                    prediction,
-                    lagged_returns,
-                    identity_lag,
-                )
-            )
+            # tqdm.write(f"beta shape: {beta.reshape(-1, 1).shape}")
+            # res = self.grad_stiefel(
+            #     returns,
+            #     beta.reshape(-1, 1),
+            #     factors,
+            #     stiefel,
+            #     prediction.reshape(1, -1),
+            #     lagged_returns,
+            #     identity_lag,
+            # ).T.reshape(self.lag, self.n_factors)
+            # tqdm.write("\nres")
+            # tqdm.write(str(res.shape))
+            # tqdm.write(res.__str__())
+            grad_stiefel = self.grad_stiefel(
+                returns,
+                beta.reshape(-1, 1),
+                factors,
+                stiefel,
+                prediction.reshape(1, -1),
+                lagged_returns,
+                identity_lag,
+            ).T.reshape(self.lag, self.n_factors)
             # print(f"\n{date} grad_stiefel: \n{grad_stiefel}")
             grad_beta = self.grad_beta(
                 returns,
@@ -124,38 +135,44 @@ class ProjGrad(Model):
         return stiefel_star, beta_star
 
     @staticmethod
-    def project(stiefel: np.ndarray) -> np.ndarray:
-        u, _, v = svd(stiefel, full_matrices=False)
-        return u @ v
-
-    @staticmethod
-    # @njit
+    @guvectorize(
+        [
+            (
+                float64[:],
+                float64[:, :],
+                int64,
+                float64[:, :],
+                float64[:, :],
+                float64[:, :],
+                float64[:, :],
+                float64[:, :],
+            )
+        ],
+        "(q),(m,k),(),(p,m),(k,n),(n,q),(q,q)->(k,q)",
+        nopython=True,
+    )
     def grad_stiefel(
         returns: np.ndarray,
         beta: np.ndarray,
-        factors: np.ndarray,
+        factor: int,
         stiefel: np.ndarray,
         prediction: np.ndarray,
         lagged_returns: np.ndarray,
         identity_lag: np.ndarray,
+        res: np.ndarray,
     ):
-        return list(
-            map(
-                lambda factor: (
-                    returns
-                    @ (
-                        beta[factor] * identity_lag
-                        - beta[factor]
-                        * stiefel
-                        @ beta.reshape(-1, 1)
-                        @ prediction.reshape(1, -1)
-                        @ lagged_returns
-                        / np.sqrt(np.linalg.norm(prediction, 2)) ** 3
-                    )
-                ).reshape(-1, 1),
-                factors,
+        res[:, :] = (
+            returns
+            @ (
+                beta[factor][0] * identity_lag
+                - beta[factor][0]
+                * stiefel
+                @ beta
+                @ prediction
+                @ lagged_returns
+                / np.sqrt(np.linalg.norm(prediction, 2)) ** 3
             )
-        )
+        ).reshape(1, -1)[:, :]
 
     @staticmethod
     def grad_beta(
@@ -182,3 +199,8 @@ class ProjGrad(Model):
     @staticmethod
     def get_indices_from(index: int, n_assets: int):
         return list(range(index * n_assets, (index + 1) * n_assets))
+
+    @staticmethod
+    def project(stiefel: np.ndarray) -> np.ndarray:
+        u, _, v = svd(stiefel, full_matrices=False)
+        return u @ v

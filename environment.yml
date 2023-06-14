@@ -14,6 +14,7 @@ dependencies:
   - pip:
     - black==23.3.0
     - ipykernel==6.15.0
+    - ipywidgets==8.0.6
     - numba==0.57.0 
     - numpy==1.24.3
     - pandas==2.0.2
