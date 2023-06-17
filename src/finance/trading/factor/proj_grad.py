@@ -30,8 +30,8 @@ class ProjGrad(Model):
 
     def train(
         self,
-        X_train: pd.DataFrame,
-        Y_train: pd.DataFrame,
+        X_train: np.ndarray,
+        Y_train: np.ndarray,
         stiefel0: Optional[np.ndarray] = None,
         beta0: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -49,25 +49,21 @@ class ProjGrad(Model):
         if len(beta.shape) == 1:
             beta = beta.reshape(-1, 1)
         max_metric = self.metric_train(stiefel, beta, X_train, Y_train)
-        identity_lag = np.eye(self.lag, self.lag)
-        identity_factors = np.eye(self.n_factors, self.n_factors)
-        factors = np.arange(0, self.n_factors)
-        indices = X_train.index
-        dates = indices.get_level_values(0).unique()
-        n_dates = len(dates)
-        assets = indices.get_level_values(1).unique()
-        n_assets = len(assets)
+        identity_lag = np.eye(self.lag)
+        identity_factors = np.eye(self.n_factors)
+        factors = np.arange(self.n_factors)
+        n_assets = Y_train.shape[0]
+        n_dates = X_train.shape[0] // n_assets
         gen = np.random.default_rng(self.random_state)
-        iterations = gen.choice(np.arange(0, n_dates), self.n_iter, replace=True)
+        iterations = gen.choice(np.arange(n_dates), self.n_iter, replace=True)
         for index in tqdm(iterations, desc=self.name):
-            date = index + self.lag
-            return_date = Y_train.loc[:, date].to_numpy()
+            return_date = Y_train[:, index]
             # print(f"return_date shape: {return_date.shape}")
             # print(f"\n{date} return_date: \n{return_date}")
             # lagged_returns = X_train.loc[self.get_index(date, assets), :].to_numpy()
-            lagged_returns = X_train.iloc[
-                self.get_indices_from(index, n_assets), :
-            ].to_numpy()
+            start = index * n_assets
+            end = (index + 1) * n_assets
+            lagged_returns = X_train[start:end, :]
             # print(f"lagged_returns shape: {lagged_returns.shape}")
             # print(f"\n{date} lagged_returns: \n{lagged_returns}")
             prediction = lagged_returns @ stiefel @ beta.reshape(-1, 1)
@@ -79,19 +75,6 @@ class ProjGrad(Model):
             # print(f"\n{date} returns: \n{returns}")
 
             # gradients
-            # tqdm.write(f"beta shape: {beta.reshape(-1, 1).shape}")
-            # res = self.grad_stiefel(
-            #     returns,
-            #     beta.reshape(-1, 1),
-            #     factors,
-            #     stiefel,
-            #     prediction.reshape(1, -1),
-            #     lagged_returns,
-            #     identity_lag,
-            # ).T.reshape(self.lag, self.n_factors)
-            # tqdm.write("\nres")
-            # tqdm.write(str(res.shape))
-            # tqdm.write(res.__str__())
             grad_stiefel = self.grad_stiefel(
                 returns,
                 beta.reshape(-1, 1),
@@ -114,20 +97,17 @@ class ProjGrad(Model):
 
             # updates
             beta = beta + self.step_beta * grad_beta
-            # beta = fitBeta(A).reshape(-1,1)
             # beta = fitBeta(A)
             # print(f"\n{date} beta: \n{beta}")
             stiefel_temp = stiefel + self.step_stiefel * grad_stiefel
             stiefel = self.project(stiefel_temp)
             # stiefel = stiefel_temp @ inv(sqrtm(stiefel_temp.T @ stiefel_temp))
-            # print(f"beta shape: {beta.shape}")
             # print(f"\n{date} stiefel: \n{stiefel}")
 
             m = self.metric_train(stiefel, beta, X_train, Y_train)
 
-            # tqdm.write(f"metric {m}")
             if m > max_metric:
-                tqdm.write(f"Date: {date} with best train metric: {m}")
+                tqdm.write(f"Iteration: {index+1} with best train metric: {m}")
                 max_metric = m
                 stiefel_star = stiefel
                 beta_star = beta
@@ -195,10 +175,6 @@ class ProjGrad(Model):
                 / np.sqrt(np.linalg.norm(prediction, 2)) ** 3
             )
         ).reshape(-1, 1)
-
-    @staticmethod
-    def get_indices_from(index: int, n_assets: int):
-        return list(range(index * n_assets, (index + 1) * n_assets))
 
     @staticmethod
     def project(stiefel: np.ndarray) -> np.ndarray:

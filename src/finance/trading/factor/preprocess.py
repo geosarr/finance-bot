@@ -17,9 +17,9 @@ class PreProcess:
             df = data.pct_change().dropna().reset_index(drop=True).T
         elif data_type == DataType.RETURN:
             df = data.copy().T
-        Y_train = df.loc[:, self.max_lag :]
+        Y_train = df.loc[:, self.max_lag :].to_numpy()
         iter_data = map(
             lambda pos: df.T.shift(pos + 1).stack(dropna=False), range(self.max_lag)
         )
-        X_train = pd.concat(iter_data, axis=1).dropna()
+        X_train = pd.concat(iter_data, axis=1).dropna().to_numpy()
         return X_train, Y_train

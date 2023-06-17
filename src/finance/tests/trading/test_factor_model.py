@@ -49,15 +49,15 @@ class TestFactorModel(unittest.TestCase):
             step_stiefel=0.1,
             step_beta=0.05,
             random_state=1234,
-            n_iter=10000,
-            use_benchmark=True,
+            n_iter=10,
+            use_benchmark=False,
         )
-        # benchmark = BenchMark(
-        #     lag=self.max_lag, n_factors=self.n_factors, n_iter=10, eps=1e-6
-        # )
-        # stiefel0, beta0 = benchmark.train(self.X_train1, self.Y_train1)
+        benchmark = Benchmark(
+            lag=self.max_lag, n_factors=self.n_factors, n_iter=10, eps=1e-6
+        )
+        stiefel0, beta0 = benchmark.train(self.X_train1, self.Y_train1)
         # beta0 = np.ones(self.n_factors)
         # stiefel0 = np.ones((self.max_lag, self.n_factors))
         # print(proj.metric_train(stiefel0, beta0, self.X_train1, self.Y_train1))
-        stiefel, beta = proj.train(self.X_train1, self.Y_train1)
+        stiefel, beta = proj.train(self.X_train1, self.Y_train1, stiefel0, beta0)
         print(proj.metric_train(stiefel, beta, self.X_train1, self.Y_train1))
