@@ -19,7 +19,7 @@ class PreProcess:
         if data_type == DataType.PRICE:
             df = data.pct_change().dropna().reset_index(drop=True).T
         elif data_type == DataType.RETURN:
-            df = data.copy().T
+            df = data.T
         Y_train = df.loc[:, self.max_lag :].to_numpy()
         iter_data = map(
             lambda pos: df.T.shift(pos + 1).stack(dropna=False), range(self.max_lag)

@@ -3,19 +3,21 @@ import pandas as pd
 from finance.trading.factor.preprocess import *
 from finance.trading.factor.benchmark import *
 from finance.trading.factor.proj_grad import *
+from finance.constant import BASE_PATH
 
 
 class TestFactorModel(unittest.TestCase):
     def setUp(self) -> None:
+        self.base_path = BASE_PATH.parent.parent.parent.parent
         self.max_lag = 250
         self.n_factors = 10
-        path_price = "/home/georges/compet/orycterope/prices.csv"
+        path_price = f"{self.base_path}/data/prices.csv"
         self.prices = pd.read_csv(path_price, sep=";")
         preprocessor = PreProcess(self.max_lag)
         self.X_train0, self.Y_train0 = preprocessor.split_x_y(
             self.prices, DataType.PRICE
         )
-        path_ret = "/home/georges/compet/data-challenge-qrt/2022/data.csv"
+        path_ret = f"{self.base_path}/data/returns.csv"
         self.data = pd.read_csv(path_ret, sep=";")
         self.X_train1, self.Y_train1 = preprocessor.split_x_y(
             self.data, DataType.RETURN
@@ -49,15 +51,18 @@ class TestFactorModel(unittest.TestCase):
             step_stiefel=0.1,
             step_beta=0.05,
             random_state=1234,
-            n_iter=10,
+            n_iter=100,
             use_benchmark=False,
         )
         benchmark = Benchmark(
             lag=self.max_lag, n_factors=self.n_factors, n_iter=10, eps=1e-6
         )
         stiefel0, beta0 = benchmark.train(self.X_train1, self.Y_train1)
-        # beta0 = np.ones(self.n_factors)
-        # stiefel0 = np.ones((self.max_lag, self.n_factors))
-        # print(proj.metric_train(stiefel0, beta0, self.X_train1, self.Y_train1))
         stiefel, beta = proj.train(self.X_train1, self.Y_train1, stiefel0, beta0)
-        print(proj.metric_train(stiefel, beta, self.X_train1, self.Y_train1))
+        metric_proj_grad = proj.metric_train(
+            stiefel, beta, self.X_train1, self.Y_train1
+        )
+        metric_benchmark = benchmark.metric_train(
+            stiefel0, beta0, self.X_train1, self.Y_train1
+        )
+        self.assertGreaterEqual(metric_proj_grad, metric_benchmark)
