@@ -1,9 +1,8 @@
 from dataclasses import dataclass
 import numpy as np
 from numpy.linalg import norm
-import pandas as pd
-from typing import Tuple, Optional
-from scipy.linalg import svd, inv, sqrtm
+from typing import Optional
+from scipy.linalg import svd
 from numba import guvectorize, float64, int64
 from tqdm.auto import tqdm
 from finance.trading.factor.__model import Model
@@ -34,7 +33,7 @@ class ProjGrad(Model):
         Y_train: np.ndarray,
         stiefel0: Optional[np.ndarray] = None,
         beta0: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> (np.ndarray, np.ndarray):
         if self.use_benchmark:
             stiefel0, beta0 = self.__benchmark.train(X_train, Y_train)
         elif stiefel0 is None or beta0 is None:

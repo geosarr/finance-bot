@@ -13,6 +13,9 @@ class PreProcess:
     max_lag: int = 50
 
     def split_x_y(self, data: pd.DataFrame, data_type: DataType = DataType.PRICE):
+        # Assets should be column-wise like
+        # pd.DataFrame({"asset_1": [price_1, price_2, ...], "asset_2": [price_1, price_2, ...], ...})
+        # or pd.DataFrame({"asset_1": [return_1, return_2, ...], "asset_2": [return_1, return_2, ...], ...})
         if data_type == DataType.PRICE:
             df = data.pct_change().dropna().reset_index(drop=True).T
         elif data_type == DataType.RETURN:
