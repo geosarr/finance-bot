@@ -1,7 +1,12 @@
 // use polars::lazy::{dsl::col, frame::LazyFrame};
+use ndarray::concatenate;
 use ndarray::prelude::*;
 use polars::prelude::*;
 
+type TrainingData = (
+    ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>>,
+    ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>>,
+);
 pub enum DataType {
     PRICE,
     RETURN,
@@ -18,9 +23,12 @@ impl Preprocessor {
     pub fn max_lag(&self) -> usize {
         self.max_lag
     }
-    pub fn split_x_y(&self, data: LazyFrame, data_type: DataType, period: i32)
-    // -> ArrayBase<ndarray::ViewRepr<&f64>, Dim<[usize; 2]>>
-    {
+    pub fn split_x_y_ndarray(
+        &self,
+        data: LazyFrame,
+        data_type: DataType,
+        period: i32,
+    ) -> TrainingData {
         // Assets should be column-wise like
         // LazyFrame({"asset_1": [price_1, price_2, ...], "asset_2": [price_1, price_2, ...], ...})
         // or LazyFrame({"asset_1": [return_1, return_2, ...], "asset_2": [return_1, return_2, ...], ...})
@@ -33,21 +41,17 @@ impl Preprocessor {
             .collect()
             .expect("Failed to get returns")
             .to_ndarray::<Float64Type>(IndexOrder::Fortran)
-            .unwrap()
-            .reversed_axes();
-
-        let y_train = returns.slice(s![.., self.max_lag..]).clone();
-
-        // if data_type == DataType.PRICE:
-        //     df = data.pct_change().dropna().reset_index(drop=True).T
-        // elif data_type == DataType.RETURN:
-        //     df = data.T
-        // Y_train = df.loc[:, self.max_lag :].to_numpy()
-        // iter_data = map(
-        //     lambda pos: df.T.shift(pos + 1).stack(dropna=False), range(self.max_lag)
-        // )
-        // X_train = pd.concat(iter_data, axis=1).dropna().to_numpy()
-        // return X_train, Y_train
-        // return y_train;
+            .unwrap();
+        let mut x_train = returns.slice(s![0..self.max_lag, ..]).t().to_owned();
+        let nb_time_steps = returns.shape()[0];
+        for n in 1..(nb_time_steps - self.max_lag) {
+            x_train = concatenate!(
+                Axis(0),
+                x_train,
+                returns.slice(s![n..n + self.max_lag, ..]).t()
+            );
+        }
+        let y_train = returns.slice(s![self.max_lag.., ..]).t().to_owned();
+        return (x_train, y_train);
     }
 }
