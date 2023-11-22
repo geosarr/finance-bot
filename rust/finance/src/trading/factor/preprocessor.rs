@@ -36,7 +36,6 @@ impl Preprocessor {
             DataType::PRICE => data.select([col("*") / col("*").shift(lit(period)) - lit(period)]),
             DataType::RETURN => data,
         };
-
         let returns = returns
             .collect()
             .expect("Failed to get returns")
@@ -44,13 +43,14 @@ impl Preprocessor {
             .unwrap();
         let mut x_train = returns.slice(s![0..self.max_lag, ..]).t().to_owned();
         let nb_time_steps = returns.shape()[0];
-        for n in 1..(nb_time_steps - self.max_lag) {
-            x_train = concatenate!(
-                Axis(0),
-                x_train,
-                returns.slice(s![n..n + self.max_lag, ..]).t()
-            );
-        }
+        let x_train: Vec<ArrayBase<ndarray::ViewRepr<&f64>, Dim<[usize; 2]>>> = (0..nb_time_steps
+            - max_lag)
+            .map(|index| returns.slice(s![index..index + max_lag, ..]))
+            .collect();
+        let x_train = concatenate(Axis(1), &x_train[..])
+            .expect("Failed to get x_train")
+            .t()
+            .to_owned();
         let y_train = returns.slice(s![self.max_lag.., ..]).t().to_owned();
         return (x_train, y_train);
     }
