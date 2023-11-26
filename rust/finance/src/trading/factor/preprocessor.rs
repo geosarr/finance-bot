@@ -38,7 +38,7 @@ impl Preprocessor {
             .expect("Failed to get returns")
             .to_ndarray::<Float64Type>(IndexOrder::Fortran)
             .unwrap();
-        let mut x_train = returns.slice(s![0..self.max_lag, ..]).t().to_owned();
+        let x_train = returns.slice(s![0..self.max_lag, ..]).t().to_owned();
         let nb_time_steps = returns.shape()[0];
         let x_train: Vec<ArrayBase<ndarray::ViewRepr<&f64>, Dim<[usize; 2]>>> = (0..nb_time_steps
             - self.max_lag)

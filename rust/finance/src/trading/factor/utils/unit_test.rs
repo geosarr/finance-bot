@@ -8,6 +8,6 @@ mod test {
             [1. / 2_f64.sqrt(), -1. / 2_f64.sqrt()],
             [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()]
         ];
-        assert!(is_orthonormal(1e-6, a));
+        assert!(is_orthonormal(1e-6, &a));
     }
 }
