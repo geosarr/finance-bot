@@ -19,7 +19,6 @@ mod test {
             [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()]
         ];
         assert_eq!(normalize(&a), a_norm);
-
         let b = array![[1., 2.], [3., 4.]];
         let b_norm = array![
             [1. / 10_f64.sqrt(), 2. / 20_f64.sqrt()],
@@ -34,5 +33,21 @@ mod test {
         let stiefel = array![[1., 1.], [1., 1.], [1., 1.], [1., 1.]];
         let beta = array![[1.], [0.]];
         assert_eq!(-1.0, calc_metric(eps, &stiefel, &beta, &stiefel, &stiefel));
+        let stiefel = array![
+            [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()],
+            [1. / 2_f64.sqrt(), -1. / 2_f64.sqrt()],
+        ];
+        let beta = array![[1.], [0.]];
+        let x_train = array![
+            [-0.0192, -0.0083],
+            [-0.0130, -0.0222],
+            [-0.0083, -0.0084],
+            [0.0222, -0.0136],
+            [-0.0084, -0.0234],
+            [-0.0136, -0.0070]
+        ];
+        let y_train = array![[-0.0084, -0.0234, 0.0051], [-0.0136, -0.0070, -0.0038]];
+        let metric = calc_metric(eps, &stiefel, &beta, &x_train, &y_train);
+        assert_eq!(0.45544479334867666, metric);
     }
 }
