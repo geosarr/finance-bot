@@ -17,7 +17,6 @@ pub fn is_orthonormal(eps: f64, stiefel: &MatrixType) -> bool {
 pub fn normalize(matrix: &MatrixType) -> MatrixType {
     let norm = matrix
         .map(|x| x.powi(2))
-        // .collect::<MatrixType>()
         .sum_axis(Axis(0))
         .map(|x| x.sqrt());
     return matrix / norm;
