@@ -11,7 +11,6 @@ mod test {
         let data = loader.load_csv(b';', true).collect().unwrap();
         assert_eq!(data.width(), 50);
         assert_eq!(data.height(), 754);
-        println!("{:?}", data);
     }
 
     #[test]
@@ -24,6 +23,5 @@ mod test {
             .unwrap();
         assert_eq!(data.width(), 50);
         assert_eq!(data.height(), 754);
-        println!("{:?}", data);
     }
 }
