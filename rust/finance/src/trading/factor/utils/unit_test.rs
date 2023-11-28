@@ -50,4 +50,23 @@ mod test {
         let metric = calc_metric(eps, &stiefel, &beta, &x_train, &y_train);
         assert_eq!(0.45544479334867666, metric);
     }
+
+    #[test]
+    fn test_schwartz_rutishauser_qr() {
+        let matrix = array![
+            [-0.24498023, -0.144783],
+            [0.014980094, 0.5980434],
+            [-0.45020490, 1.0214345],
+            [0.689404899, 0.4580322],
+            [-0.075092312, -0.232462],
+            [0.064296445, 0.9320769]
+        ];
+        let (q, r) = schwartz_rutishauser_qr(&matrix);
+        let error = q.dot(&r) - matrix;
+        let eps = 1e-10;
+        assert!(!error
+            .map(|err| err.abs())
+            .iter()
+            .any(|abs_err| abs_err > &eps));
+    }
 }
