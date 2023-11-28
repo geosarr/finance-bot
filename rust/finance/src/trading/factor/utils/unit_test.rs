@@ -27,4 +27,12 @@ mod test {
         ];
         assert_eq!(normalize(&b), b_norm);
     }
+
+    #[test]
+    fn test_calc_metric() {
+        let eps: f64 = 1e-6;
+        let stiefel = array![[1., 1.], [1., 1.], [1., 1.], [1., 1.]];
+        let beta = array![[1.], [0.]];
+        assert_eq!(-1.0, calc_metric(eps, &stiefel, &beta, &stiefel, &stiefel));
+    }
 }
