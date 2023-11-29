@@ -1,14 +1,16 @@
 #[cfg(test)]
 mod test {
     use super::super::*;
-    use ndarray::{array, Dim};
+    use ndarray::array;
     #[test]
     fn test_is_orthonormal() {
-        let a = array![
+        let ortho = array![
             [1. / 2_f64.sqrt(), -1. / 2_f64.sqrt()],
             [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()]
         ];
-        assert!(is_orthonormal(1e-6, &a));
+        let not_ortho = array![[1., 1.], [1., -1.]];
+        assert!(is_orthonormal(1e-6, &ortho));
+        assert!(!is_orthonormal(1e-6, &not_ortho));
     }
 
     #[test]
@@ -18,13 +20,21 @@ mod test {
             [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()],
             [1. / 2_f64.sqrt(), 1. / 2_f64.sqrt()]
         ];
-        assert_eq!(normalize(&a), a_norm);
+        assert_eq!(normalize(&a, 0), a_norm);
         let b = array![[1., 2.], [3., 4.]];
         let b_norm = array![
             [1. / 10_f64.sqrt(), 2. / 20_f64.sqrt()],
             [3. / 10_f64.sqrt(), 4. / 20_f64.sqrt()]
         ];
-        assert_eq!(normalize(&b), b_norm);
+        assert_eq!(normalize(&b, 0), b_norm);
+
+        let c = array![[5., 6., 2.], [7., 8., 1.], [9., 10., 0.]];
+        let c_norm = array![
+            [5. / 65_f64.sqrt(), 6. / 114_f64.sqrt(), 2. / 181_f64.sqrt()],
+            [7. / 65_f64.sqrt(), 8. / 114_f64.sqrt(), 1. / 181_f64.sqrt()],
+            [9. / 65_f64.sqrt(), 10. / 114_f64.sqrt(), 0.],
+        ];
+        assert_eq!(normalize(&c, 1), c_norm);
     }
 
     #[test]
@@ -68,5 +78,6 @@ mod test {
             .map(|err| err.abs())
             .iter()
             .any(|abs_err| abs_err > &eps));
+        assert!(is_orthonormal(eps, &q));
     }
 }
