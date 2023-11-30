@@ -64,8 +64,8 @@ impl BenchMark {
             if metric > self.max_metric {
                 self.max_metric = metric;
                 println!("Best parameters found at iteration {iter}.");
-                let stiefel_star = stiefel;
-                let beta_star = beta;
+                stiefel_star = stiefel;
+                beta_star = beta;
             }
         }
         return (stiefel_star, beta_star);

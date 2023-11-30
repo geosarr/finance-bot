@@ -13,8 +13,9 @@ mod test {
         let max_lag = 250;
         let preprocessor = Preprocessor::init(max_lag);
         let (x_train, y_train) = preprocessor.split_x_y_ndarray(data, DataType::RETURN, 1);
-        println!("{:?}", x_train);
-        let mut benchmark_model = BenchMark::init(100, 1e-6, 100, 250, 10);
+        let mut benchmark_model = BenchMark::init(20, 1e-6, 100, 250, 10);
         let (stiefel_star, beta_star) = benchmark_model.train(&x_train, &y_train);
+        println!("{:?}", stiefel_star);
+        println!("{:?}", beta_star);
     }
 }
