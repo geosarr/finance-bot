@@ -6,7 +6,8 @@ use ndarray_rand::{rand_distr::StandardNormal, RandomExt};
 use polars::series::Series;
 
 pub type MatrixType = ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>>;
-pub type VecViewType<'a> = ArrayBase<ndarray::ViewRepr<&'a f64>, Dim<[usize; 1]>>;
+pub type VecType = ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 1]>>;
+type VecViewType<'a> = ArrayBase<ndarray::ViewRepr<&'a f64>, Dim<[usize; 1]>>;
 
 pub fn pct_change(prices: &Series) -> Series {
     (prices / &prices.shift(1)) - 1
