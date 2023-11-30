@@ -1,0 +1,9 @@
+__pycache__
+finance.egg-info
+target/
+.pytest_cache/
+Cargo.lock
+tasks.txt
+TODO
+test.py
+__bin/
