@@ -14,24 +14,18 @@ mod test {
         let preprocessor = Preprocessor::init(max_lag);
         let (x_train, y_train) = preprocessor.split_x_y_ndarray(data, DataType::RETURN, 1);
         let n_factors = 10;
-        let n_iter = 100;
+        let n_iter = 40;
         let tol = 1e-6;
-        let random_sate = 12345;
-        let (stiefel_star, beta_star) = parallel_train(
-            n_iter,
-            tol,
-            max_lag,
-            n_factors,
-            random_sate,
-            &x_train,
-            &y_train,
-        );
-        let mut benchmark_model = BenchMark::init(n_iter, tol, random_sate, max_lag, n_factors);
-        let (stiefel_star, beta_star) = benchmark_model.sequential_train(&x_train, &y_train);
-        assert_eq!(stiefel_star.nrows(), max_lag);
-        assert_eq!(stiefel_star.ncols(), n_factors);
-        println!("{:?}", stiefel_star);
-        println!("{:?}", beta_star);
+        let random_state = 12345;
+        let mut benchmark_model = BenchMark::init(n_iter, tol, random_state, max_lag, n_factors);
+        let (par_stiefel_star, par_beta_star) = benchmark_model.train(&x_train, &y_train, true);
+        let (seq_stiefel_star, seq_beta_star) = benchmark_model.train(&x_train, &y_train, false);
+        assert_eq!(par_stiefel_star.nrows(), max_lag);
+        assert_eq!(par_stiefel_star.ncols(), n_factors);
+        assert_eq!(par_stiefel_star, seq_stiefel_star);
+        assert_eq!(par_beta_star, seq_beta_star);
+        println!("{:?}", par_stiefel_star);
+        println!("{:?}", par_beta_star);
         println!("{}", benchmark_model.max_metric());
     }
 }

@@ -18,16 +18,6 @@ pub struct BenchMark {
 }
 
 #[derive(Debug)]
-struct ParamResult {
-    stiefel: MatrixType,
-    beta: MatrixType,
-}
-impl ParamResult {
-    pub fn init(stiefel: MatrixType, beta: MatrixType) -> Self {
-        Self { stiefel, beta }
-    }
-}
-#[derive(Debug)]
 struct BenchMarkResult {
     // Stiefel and beta parameters
     params: Option<ParamResult>,
@@ -38,6 +28,16 @@ struct BenchMarkResult {
     // Arbitrarily high number to convert f64
     // metric to usize (should depend on the use case)
     max_decimal: f64,
+}
+#[derive(Debug)]
+struct ParamResult {
+    stiefel: MatrixType,
+    beta: MatrixType,
+}
+impl ParamResult {
+    pub fn init(stiefel: MatrixType, beta: MatrixType) -> Self {
+        Self { stiefel, beta }
+    }
 }
 impl BenchMarkResult {
     pub fn init(params: Option<ParamResult>, metric: f64, random_state: u64) -> Self {
@@ -59,25 +59,6 @@ impl BenchMarkResult {
         }
     }
 }
-impl PartialOrd for BenchMarkResult {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for BenchMarkResult {
-    fn cmp(&self, other: &Self) -> Ordering {
-        ((self.max_decimal * self.metric) as usize)
-            .cmp(&((other.max_decimal * other.metric) as usize))
-    }
-}
-
-impl PartialEq for BenchMarkResult {
-    fn eq(&self, other: &Self) -> bool {
-        (self.max_decimal * self.metric) as usize == (self.max_decimal * other.metric) as usize
-    }
-}
-impl Eq for BenchMarkResult {}
 impl BenchMark {
     pub fn init(
         n_iter: usize,
@@ -98,37 +79,40 @@ impl BenchMark {
     pub fn max_metric(&self) -> f64 {
         self.max_metric
     }
-
-    /// Trains a random Stiefel model sequentially
-    pub fn sequential_train(
+    pub fn train(
         &mut self,
         x_train: &MatrixType,
         y_train: &MatrixType,
+        in_parallel: bool,
     ) -> (MatrixType, MatrixType) {
-        if self.max_metric > -1.0 {
-            // Reset the maximum metric at each run
-            self.max_metric = -1.0;
-        }
-        let mut stiefel_star = Array::zeros((self.n_lags, self.n_factors));
-        let mut beta_star = Array::zeros((self.n_factors, 1));
-        let targets = vectorize(y_train, 0);
-        let best_params_trajectory: Vec<_> = (0..self.n_iter)
-            .filter_map(|iter| {
-                test_params(
-                    self.eps,
-                    self.n_lags,
-                    self.n_factors,
-                    self.random_state + (iter as u64),
-                    x_train,
-                    y_train,
-                    &targets,
-                    &mut self.max_metric,
-                    &mut stiefel_star,
-                    &mut beta_star,
-                )
-            })
-            .collect();
-        return (stiefel_star, beta_star);
+        return if in_parallel {
+            parallel_train(
+                self.n_iter,
+                self.eps,
+                self.n_lags,
+                self.n_factors,
+                self.random_state,
+                x_train,
+                y_train,
+                &mut self.max_metric,
+            )
+        } else {
+            if self.max_metric > -1.0 {
+                // Reset the value the minimum
+                // value of the cosine metric, i.e -1
+                self.max_metric = -1.0;
+            }
+            sequential_train(
+                self.n_iter,
+                self.eps,
+                self.n_lags,
+                self.n_factors,
+                self.random_state,
+                x_train,
+                y_train,
+                &mut self.max_metric,
+            )
+        };
     }
 }
 
@@ -141,6 +125,7 @@ pub fn parallel_train(
     random_state: u64,
     x_train: &MatrixType,
     y_train: &MatrixType,
+    max_metric: &mut f64,
 ) -> (MatrixType, MatrixType) {
     let mut handles = Arc::new(Mutex::new(Vec::new()));
     let targets = Arc::new(vectorize(y_train, 0));
@@ -166,13 +151,44 @@ pub fn parallel_train(
     let mut results = handles.lock().unwrap();
     results.sort();
     let best_seed = &results[results.len() - 1].random_state();
-    let stiefel_star = get_orthonormal(n_lags, n_factors, *best_seed);
-    let beta_star = fit_beta(&stiefel_star, x_train, &targets);
+    let (stiefel_star, beta_star, metric_star) = candidate_params(
+        eps, n_lags, n_factors, *best_seed, true, x_train, y_train, &targets,
+    )
+    .into_params_metric();
+    *max_metric = metric_star;
+    return (stiefel_star.unwrap(), beta_star.unwrap());
+}
 
-    println!(
-        "{:?}",
-        calc_metric(1e-6, &stiefel_star, &beta_star, x_train, y_train)
-    );
+/// Trains a random Stiefel model sequentially
+pub fn sequential_train(
+    n_iter: usize,
+    eps: f64,
+    n_lags: usize,
+    n_factors: usize,
+    random_state: u64,
+    x_train: &MatrixType,
+    y_train: &MatrixType,
+    max_metric: &mut f64,
+) -> (MatrixType, MatrixType) {
+    let mut stiefel_star = Array::zeros((n_lags, n_factors));
+    let mut beta_star = Array::zeros((n_factors, 1));
+    let targets = vectorize(y_train, 0);
+    let best_params_trajectory: Vec<_> = (0..n_iter)
+        .filter_map(|iter| {
+            test_params(
+                eps,
+                n_lags,
+                n_factors,
+                random_state + (iter as u64),
+                x_train,
+                y_train,
+                &targets,
+                max_metric,
+                &mut stiefel_star,
+                &mut beta_star,
+            )
+        })
+        .collect();
     return (stiefel_star, beta_star);
 }
 
@@ -246,3 +262,21 @@ fn vectorize(data: &MatrixType, axis: usize) -> MatrixType {
         .into_shape((shape[0] * shape[1], 1))
         .expect("Failed to put into shape.");
 }
+
+impl PartialOrd for BenchMarkResult {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BenchMarkResult {
+    fn cmp(&self, other: &Self) -> Ordering {
+        ((self.max_decimal * self.metric) as usize)
+            .cmp(&((other.max_decimal * other.metric) as usize))
+    }
+}
+impl PartialEq for BenchMarkResult {
+    fn eq(&self, other: &Self) -> bool {
+        (self.max_decimal * self.metric) as usize == (self.max_decimal * other.metric) as usize
+    }
+}
+impl Eq for BenchMarkResult {}
