@@ -11,3 +11,4 @@ ndarray = "0.15.6"
 ndarray-rand = "0.14.0"
 ndarray-linalg = { version = "0.16.0", features = ["openblas-static"] } 
 rand_chacha = "0.3.1"
+threadpool = "1.8.1"

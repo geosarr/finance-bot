@@ -4,9 +4,8 @@ use crate::trading::factor::utils::{calc_metric, get_orthonormal, MatrixType};
 use ndarray::{concatenate, Array, Axis};
 use ndarray_linalg::solve::Inverse;
 use std::cmp::{Ordering, PartialOrd};
-use std::sync::Arc;
-use std::thread;
-use std::thread::JoinHandle;
+use std::sync::{Arc, Mutex};
+use threadpool;
 
 /// Stores the hyperparameters of the benchmark model
 pub struct BenchMark {
@@ -69,7 +68,7 @@ impl PartialOrd for BenchMarkResult {
 impl Ord for BenchMarkResult {
     fn cmp(&self, other: &Self) -> Ordering {
         ((self.max_decimal * self.metric) as usize)
-            .cmp(&((self.max_decimal * other.metric) as usize))
+            .cmp(&((other.max_decimal * other.metric) as usize))
     }
 }
 
@@ -115,11 +114,15 @@ impl BenchMark {
         let targets = vectorize(y_train, 0);
         let best_params_trajectory: Vec<_> = (0..self.n_iter)
             .filter_map(|iter| {
-                self.test_params(
-                    iter,
+                test_params(
+                    self.eps,
+                    self.n_lags,
+                    self.n_factors,
+                    self.random_state + (iter as u64),
                     x_train,
                     y_train,
                     &targets,
+                    &mut self.max_metric,
                     &mut stiefel_star,
                     &mut beta_star,
                 )
@@ -127,41 +130,9 @@ impl BenchMark {
             .collect();
         return (stiefel_star, beta_star);
     }
-    /// Tests a candidate pair of random Stiefel matrix and a linear regression parameter.
-    fn test_params<'a, 'b>(
-        &'a mut self,
-        iter: usize,
-        x_train: &MatrixType,
-        y_train: &MatrixType,
-        targets: &MatrixType,
-        stiefel_star: &'a mut MatrixType,
-        beta_star: &'a mut MatrixType,
-    ) -> Option<usize> {
-        let (stiefel, beta, metric) = candidate_params(
-            self.eps,
-            self.n_lags,
-            self.n_factors,
-            self.random_state,
-            true,
-            x_train,
-            y_train,
-            targets,
-        )
-        .into_params_metric();
-        let mut flag_better_params = None;
-        if metric > self.max_metric {
-            self.max_metric = metric;
-            flag_better_params = Some(iter);
-            println!("Best parameters found at iteration {iter}.");
-            *stiefel_star = stiefel.unwrap();
-            *beta_star = beta.unwrap();
-        }
-        return flag_better_params;
-    }
 }
 
 /// Trains a random Stiefel model in parallel
-
 pub fn parallel_train(
     n_iter: usize,
     eps: f64,
@@ -171,35 +142,33 @@ pub fn parallel_train(
     x_train: &MatrixType,
     y_train: &MatrixType,
 ) -> (MatrixType, MatrixType) {
-    let mut handles: Vec<JoinHandle<BenchMarkResult>> = Vec::new();
+    let mut handles = Arc::new(Mutex::new(Vec::new()));
     let targets = Arc::new(vectorize(y_train, 0));
-    let xtrain = Arc::new(x_train.clone());
-    let ytrain = Arc::new(y_train.clone());
+    let xtrain = Arc::new(x_train.clone()); // may take memory for some use cases
+    let ytrain = Arc::new(y_train.clone()); // may take memory for some use cases
+    let pool = threadpool::Builder::new().num_threads(40).build();
     for iter in 0..n_iter {
+        let handles = Arc::clone(&handles);
         let targets = Arc::clone(&targets);
         let xtrain = Arc::clone(&xtrain);
         let ytrain = Arc::clone(&ytrain);
         let seed = random_state + (iter as u64);
-        let handle = thread::spawn(move || {
-            candidate_params(
+        pool.execute(move || {
+            let handle = candidate_params(
                 eps, n_lags, n_factors, seed, false, &xtrain, &ytrain, &targets,
-            )
+            );
+            let mut handles = handles.lock().unwrap();
+            handles.push(handle);
         });
-        handles.push(handle);
     }
+    pool.join();
     // Contains only the random states and the metric of the candidate parameters
-    let mut results = handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .collect::<Vec<BenchMarkResult>>();
-    // To get the best metric parameter and the associated random_state in the last position
+    let mut results = handles.lock().unwrap();
     results.sort();
     let best_seed = &results[results.len() - 1].random_state();
     let stiefel_star = get_orthonormal(n_lags, n_factors, *best_seed);
     let beta_star = fit_beta(&stiefel_star, x_train, &targets);
 
-    // println!("{:?}", &results[0..2]);
-    // println!("{:?}", &results[results.len() - 2..results.len()]);
     println!(
         "{:?}",
         calc_metric(1e-6, &stiefel_star, &beta_star, x_train, y_train)
@@ -207,7 +176,37 @@ pub fn parallel_train(
     return (stiefel_star, beta_star);
 }
 
-/// Gets a candidate Stiefel matrix and a linear regression coefficient along with the associated metrics.
+/// Tests a candidate pair of random
+/// Stiefel matrix and a linear regression parameter.
+fn test_params(
+    eps: f64,
+    n_lags: usize,
+    n_factors: usize,
+    seed: u64,
+    x_train: &MatrixType,
+    y_train: &MatrixType,
+    targets: &MatrixType,
+    max_metric: &mut f64,
+    stiefel_star: &mut MatrixType,
+    beta_star: &mut MatrixType,
+) -> Option<u64> {
+    let (stiefel, beta, metric) = candidate_params(
+        eps, n_lags, n_factors, seed, true, x_train, y_train, targets,
+    )
+    .into_params_metric();
+    let mut flag_better_params = None;
+    if metric > *max_metric {
+        *max_metric = metric;
+        flag_better_params = Some(seed);
+        println!("Best parameters found with seed {seed}.");
+        *stiefel_star = stiefel.unwrap();
+        *beta_star = beta.unwrap();
+    }
+    return flag_better_params;
+}
+
+/// Gets a candidate Stiefel matrix and a linear
+/// regression coefficient along with the associated metrics.
 fn candidate_params(
     eps: f64,
     n_lags: usize,
@@ -230,7 +229,7 @@ fn candidate_params(
 }
 
 /// Fits a linear regression coefficient.
-pub fn fit_beta(stiefel: &MatrixType, x_train: &MatrixType, y_train: &MatrixType) -> MatrixType {
+fn fit_beta(stiefel: &MatrixType, x_train: &MatrixType, y_train: &MatrixType) -> MatrixType {
     let predictor = x_train.dot(stiefel);
     return Inverse::inv(&predictor.t().dot(&predictor))
         .unwrap()
