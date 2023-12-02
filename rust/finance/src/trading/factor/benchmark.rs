@@ -51,6 +51,9 @@ impl BenchMarkResult {
     pub fn random_state(&self) -> u64 {
         self.random_state
     }
+    pub fn metric(&self) -> f64 {
+        self.metric
+    }
     pub fn into_params_metric(self) -> (Option<MatrixType>, Option<MatrixType>, f64) {
         if let Some(params) = self.params {
             (Some(params.stiefel), Some(params.beta), self.metric)
@@ -127,35 +130,42 @@ pub fn parallel_train(
     y_train: &MatrixType,
     max_metric: &mut f64,
 ) -> (MatrixType, MatrixType) {
-    let mut handles = Arc::new(Mutex::new(Vec::new()));
+    let mut handles = Arc::new(Mutex::new(Vec::with_capacity(10)));
     let targets = Arc::new(vectorize(y_train, 0));
     let xtrain = Arc::new(x_train.clone()); // may take memory for some use cases
     let ytrain = Arc::new(y_train.clone()); // may take memory for some use cases
-    let pool = threadpool::Builder::new().num_threads(40).build();
+    let maxmetric = Arc::new(Mutex::new(max_metric.clone()));
+    let pool = threadpool::Builder::new().num_threads(49).build();
     for iter in 0..n_iter {
         let handles = Arc::clone(&handles);
         let targets = Arc::clone(&targets);
         let xtrain = Arc::clone(&xtrain);
         let ytrain = Arc::clone(&ytrain);
+        let mut maxmetric = Arc::clone(&maxmetric);
         let seed = random_state + (iter as u64);
         pool.execute(move || {
-            let handle = candidate_params(
+            let result = candidate_params(
                 eps, n_lags, n_factors, seed, false, &xtrain, &ytrain, &targets,
             );
-            let mut handles = handles.lock().unwrap();
-            handles.push(handle);
+            let mut maxmetric = maxmetric.lock().unwrap();
+            println!("Iteration {iter}");
+            if *maxmetric < result.metric() {
+                println!("Best parameters found with seed {seed}.");
+                let mut handles = handles.lock().unwrap();
+                *maxmetric = result.metric();
+                handles.push(result);
+            }
         });
     }
     pool.join();
     // Contains only the random states and the metric of the candidate parameters
     let mut results = handles.lock().unwrap();
-    results.sort();
     let best_seed = &results[results.len() - 1].random_state();
     let (stiefel_star, beta_star, metric_star) = candidate_params(
         eps, n_lags, n_factors, *best_seed, true, x_train, y_train, &targets,
     )
     .into_params_metric();
-    *max_metric = metric_star;
+    *max_metric = *maxmetric.lock().unwrap();
     return (stiefel_star.unwrap(), beta_star.unwrap());
 }
 
