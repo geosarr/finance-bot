@@ -13,9 +13,25 @@ mod test {
         let max_lag = 250;
         let preprocessor = Preprocessor::init(max_lag);
         let (x_train, y_train) = preprocessor.split_x_y_ndarray(data, DataType::RETURN, 1);
-        let mut benchmark_model = BenchMark::init(20, 1e-6, 100, 250, 10);
-        let (stiefel_star, beta_star) = benchmark_model.train(&x_train, &y_train);
+        let n_factors = 10;
+        let n_iter = 100;
+        let tol = 1e-6;
+        let random_sate = 12345;
+        let (stiefel_star, beta_star) = parallel_train(
+            n_iter,
+            tol,
+            max_lag,
+            n_factors,
+            random_sate,
+            &x_train,
+            &y_train,
+        );
+        let mut benchmark_model = BenchMark::init(n_iter, tol, random_sate, max_lag, n_factors);
+        let (stiefel_star, beta_star) = benchmark_model.sequential_train(&x_train, &y_train);
+        assert_eq!(stiefel_star.nrows(), max_lag);
+        assert_eq!(stiefel_star.ncols(), n_factors);
         println!("{:?}", stiefel_star);
         println!("{:?}", beta_star);
+        println!("{}", benchmark_model.max_metric());
     }
 }

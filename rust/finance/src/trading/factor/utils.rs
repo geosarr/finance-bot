@@ -2,8 +2,9 @@
 mod unit_test;
 use ndarray::prelude::*;
 use ndarray::{Array, ArrayBase, Axis, Dim};
-use ndarray_rand::{rand_distr::StandardNormal, RandomExt};
+use ndarray_rand::{rand::SeedableRng, rand_distr::StandardNormal, RandomExt};
 use polars::series::Series;
+use rand_chacha::ChaCha20Rng;
 
 pub type MatrixType = ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 2]>>;
 pub type VecType = ArrayBase<ndarray::OwnedRepr<f64>, Dim<[usize; 1]>>;
@@ -36,8 +37,9 @@ pub fn schwartz_rutishauser_qr(matrix: &MatrixType) -> (MatrixType, MatrixType) 
     return (-q, -r);
 }
 
-pub fn get_orthonormal(n_lags: usize, n_factors: usize) -> MatrixType {
-    let gaussian: MatrixType = Array::random((n_lags, n_factors), StandardNormal);
+pub fn get_orthonormal(n_lags: usize, n_factors: usize, seed: u64) -> MatrixType {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let gaussian: MatrixType = Array::random_using((n_lags, n_factors), StandardNormal, &mut rng);
     return schwartz_rutishauser_qr(&gaussian).0;
 }
 
