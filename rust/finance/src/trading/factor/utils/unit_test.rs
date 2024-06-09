@@ -74,10 +74,7 @@ mod test {
         let (q, r) = schwartz_rutishauser_qr(&matrix);
         let error = q.dot(&r) - matrix;
         let eps = 1e-10;
-        assert!(!error
-            .map(|err| err.abs())
-            .iter()
-            .any(|abs_err| abs_err > &eps));
+        assert!(error.iter().all(|err| err.abs() <= eps));
         assert!(is_orthonormal(eps, &q));
     }
 }

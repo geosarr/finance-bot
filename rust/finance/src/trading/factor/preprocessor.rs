@@ -4,7 +4,7 @@ use crate::trading::factor::utils::MatrixType;
 use ndarray::concatenate;
 use ndarray::prelude::*;
 use polars::prelude::*;
-type TrainingData = (MatrixType, MatrixType);
+type TrainingData = (MatrixType<f64>, MatrixType<f64>);
 pub enum DataType {
     PRICE,
     RETURN,
@@ -40,8 +40,8 @@ impl Preprocessor {
             .to_ndarray::<Float64Type>(IndexOrder::Fortran)
             .unwrap();
         let nb_time_steps = returns.shape()[0];
-        let x_train: Vec<ArrayBase<ndarray::ViewRepr<&f64>, Dim<[usize; 2]>>> = (0..nb_time_steps
-            - self.max_lag)
+        let mut x_train: Vec<ArrayBase<ndarray::ViewRepr<&f64>, Dim<[usize; 2]>>> = (0
+            ..nb_time_steps - self.max_lag)
             .map(|index| returns.slice(s![index..index + self.max_lag, ..]))
             .collect();
         let x_train = concatenate(Axis(1), &x_train[..])
@@ -49,6 +49,6 @@ impl Preprocessor {
             .t()
             .to_owned();
         let y_train = returns.slice(s![self.max_lag.., ..]).t().to_owned();
-        return (x_train, y_train);
+        return (x_train.slice(s![.., ..;-1]).to_owned(), y_train);
     }
 }

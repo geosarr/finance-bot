@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 polars = {version = "0.35.2", features = ["lazy", "csv", "describe", "parquet", "ndarray"]}
-ndarray = "0.15.6"
+ndarray = {version ="0.15.6", features = ["rayon"]}
 ndarray-rand = "0.14.0"
 ndarray-linalg = { version = "0.16.0", features = ["openblas-static"] } 
 rand_chacha = "0.3.1"
