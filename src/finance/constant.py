@@ -1,1 +1,0 @@
-PARQUET = ".parquet"
